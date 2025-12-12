@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # ------------------------------------------------
+  # INFRA PESADA (Cluster Mongo 3 Nós + Init)
+  # ------------------------------------------------
+  mongo1:
+    image: mongo:latest
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports: ["27017:27017"]
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  mongo2:
+    image: mongo:latest
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports: ["27018:27017"]
+
+  mongo3:
+    image: mongo:latest
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports: ["27019:27017"]
+
+  mongo-init:
+    image: mongo:latest
+    depends_on: [mongo1, mongo2, mongo3]
+    command: >
+      bash -c "sleep 10 && mongosh --host mongo1:27017 --eval 
+      'rs.initiate({_id: \"rs0\", members: [{_id: 0, host: \"mongo1:27017\"}, {_id: 1, host: \"mongo2:27017\"}, {_id: 2, host: \"mongo3:27017\"}]})'"
+
+  mosquitto:
+    image: eclipse-mosquitto
+    ports: ["1883:1883"]
+    volumes:
+      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
+
+  # ------------------------------------------------
+  # APLICAÇÕES ESCALADAS
+  # ------------------------------------------------
+  ssacp: # 3 SERVIDORES
+    build: .
+    command: python ssacp/main_server.py
+    expose: ["50051"]
+    depends_on: [mongo1, mongo2, mongo3]
+    environment:
+      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
+    deploy:
+      replicas: 3
+
+  isccp: # 15 SENSORES
+    build: .
+    command: python isccp/main_isccp.py
+    depends_on: [mosquitto, ssacp]
+    environment:
+      - BROKER_ADDRESS=mosquitto
+      - GRPC_SERVER=ssacp:50051
+    deploy:
+      replicas: 15
+
+  carro: # 24 CARROS
+    build: .
+    command: python car/main_car.py
+    depends_on: [mosquitto]
+    environment:
+      - BROKER_ADDRESS=mosquitto
+    deploy:
+      replicas: 24
+
+  ssvcp: # 1 DASHBOARD
+    build: .
+    command: python ssvcp/app.py
+    ports: ["5000:5000"]
+    depends_on: [mongo1]
+    environment:
+      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0

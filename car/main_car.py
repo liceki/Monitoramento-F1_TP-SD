@@ -5,61 +5,70 @@ import os
 import paho.mqtt.client as mqtt
 
 # --- CONFIGURAÇÕES ---
-# Pega configurações das variáveis de ambiente (para funcionar no Docker)
 BROKER_ADDRESS = os.getenv("BROKER_ADDRESS", "localhost")
 BROKER_PORT = 1883
 TOPIC = "f1/pneus"
 
-# Se não tiver ID definido no Docker, gera um aleatório
-CAR_ID = os.getenv("CAR_ID", f"Carro_Desconhecido_{random.randint(1, 99)}")
+# Lista Oficial F1 2024 (Simplificada para caber nos cards)
+PILOTOS = [
+    "RedBull - Verstappen", "RedBull - Perez",
+    "Ferrari - Leclerc", "Ferrari - Sainz",
+    "Mercedes - Hamilton", "Mercedes - Russell",
+    "McLaren - Norris", "McLaren - Piastri",
+    "Aston Martin - Alonso", "Aston Martin - Stroll",
+    "Alpine - Gasly", "Alpine - Ocon",
+    "Williams - Albon", "Williams - Sargeant",
+    "RB - Ricciardo", "RB - Tsunoda",
+    "Sauber - Bottas", "Sauber - Zhou",
+    "Haas - Magnussen", "Haas - Hulkenberg",
+    # Extras para completar 24 carros (Safety Cars ou Reservas)
+    "Safety Car - Mercedes", "Safety Car - Aston",
+    "F2 - Bearman", "F2 - Antonelli"
+]
 
-# --- ESTADO INICIAL DO CARRO ---
-# Mantemos o estado fora do loop para simular a progressão (desgaste acumulativo)
+# Tenta pegar um ID único baseado no hostname do Docker para não repetir nomes
+# O Docker nomeia como "projeto_carro_1", "projeto_carro_2"...
+try:
+    hostname = os.uname()[1]  # Pega o nome do container ex: f1-carro-12
+    # Extrai números do hostname
+    numero_container = int(''.join(filter(str.isdigit, hostname)))
+    # Usa o numero para pegar o index da lista (com modulo para não estourar)
+    nome_piloto = PILOTOS[(numero_container - 1) % len(PILOTOS)]
+except:
+    # Fallback: Se não conseguir ler o hostname, pega aleatório
+    nome_piloto = random.choice(PILOTOS)
+
+CAR_ID = nome_piloto
+
+# --- ESTADO INICIAL ---
 estado_pneus = {
-    "fl": {"desgaste": 0.0, "temp": 90.0, "pressao": 22.0},  # Front Left
-    "fr": {"desgaste": 0.0, "temp": 90.0, "pressao": 22.0},  # Front Right
-    "rl": {"desgaste": 0.0, "temp": 90.0, "pressao": 20.0},  # Rear Left
-    "rr": {"desgaste": 0.0, "temp": 90.0, "pressao": 20.0},  # Rear Right
+    "fl": {"desgaste": 0.0, "temp": 90.0, "pressao": 22.0},
+    "fr": {"desgaste": 0.0, "temp": 90.0, "pressao": 22.0},
+    "rl": {"desgaste": 0.0, "temp": 90.0, "pressao": 20.0},
+    "rr": {"desgaste": 0.0, "temp": 90.0, "pressao": 20.0},
 }
 volta_atual = 1
 
 
 def simular_fisica():
-    """
-    Atualiza o estado dos pneus baseados em uma simulação simples.
-    """
     global volta_atual
-
-    # Simula velocidade variável na volta
     velocidade = random.uniform(100.0, 340.0)
-
-    # Fator de desgaste: curvas rápidas desgastam mais
     fator_stress = (velocidade / 340.0) * random.uniform(0.05, 0.2)
 
     for posicao, pneu in estado_pneus.items():
-        # Aumenta desgaste
         pneu["desgaste"] += fator_stress
         if pneu["desgaste"] > 100: pneu["desgaste"] = 100.0
 
-        # Temperatura varia com a velocidade (mais rápido = mais quente)
-        # Tenta manter entre 80 e 120 graus
         target_temp = 80 + (velocidade * 0.12)
         pneu["temp"] = (pneu["temp"] * 0.9) + (target_temp * 0.1) + random.uniform(-2, 2)
-
-        # Pressão sobe com a temperatura (Lei dos Gases Ideais simplificada)
         pneu["pressao"] = 20.0 + (pneu["temp"] / 100.0) * 2.5
 
-    # Lógica de volta (a cada 20 envios, conta uma volta - só para exemplo)
     if random.randint(0, 20) == 0:
         volta_atual += 1
-
     return velocidade
 
 
 def gerar_payload(velocidade):
-    """
-    Monta o JSON final conforme esperado pelo sistema
-    """
     return {
         "carro_id": CAR_ID,
         "volta": volta_atual,
@@ -90,46 +99,33 @@ def gerar_payload(velocidade):
     }
 
 
-# --- CONEXÃO MQTT ---
+# --- CONEXÃO ---
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        print(f"[{CAR_ID}] Conectado ao Broker MQTT com sucesso!")
+        print(f"[{CAR_ID}] Conectado!")
     else:
-        print(f"[{CAR_ID}] Falha na conexão. Código: {rc}")
+        print(f"Falha conexão: {rc}")
 
 
-print(f"[{CAR_ID}] Iniciando telemetria...")
-client = mqtt.Client(client_id=CAR_ID)
+client = mqtt.Client(client_id=f"Car_{random.randint(1000, 9999)}")  # ID MQTT único
 client.on_connect = on_connect
 
-# Tenta conectar (loop de retry simples caso o broker ainda esteja subindo)
 while True:
     try:
         client.connect(BROKER_ADDRESS, BROKER_PORT)
         break
-    except Exception as e:
-        print(f"Aguardando Broker em {BROKER_ADDRESS}...")
+    except:
         time.sleep(2)
 
 client.loop_start()
 
 try:
     while True:
-        # 1. Simular
         vel = simular_fisica()
-
-        # 2. Gerar JSON
-        dados = gerar_payload(vel)
-        payload_str = json.dumps(dados)
-
-        # 3. Publicar
-        client.publish(TOPIC, payload_str)
-        print(f"[{CAR_ID}] Enviado. Vel: {vel:.1f} km/h | Desgaste FL: {dados['pneus']['dianteiro_esq']['desgaste']}%")
-
-        # Frequência de envio (simula passar pelos sensores ISCCP)
-        time.sleep(3)
-
+        payload = json.dumps(gerar_payload(vel))
+        client.publish(TOPIC, payload)
+        # Randomiza um pouco o tempo de envio para evitar que todos mandem EXATAMENTE juntos
+        time.sleep(random.uniform(2.5, 3.5))
 except KeyboardInterrupt:
-    print("Parando carro...")
     client.loop_stop()
     client.disconnect()

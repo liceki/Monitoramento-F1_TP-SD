@@ -2,138 +2,143 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>F1 Telemetria - GP Brasil</title>
+    <title>F1 Monitoramento - GP Interlagos</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .navbar { background-color: #1f1f1f; border-bottom: 3px solid #e10600; } /* Vermelho F1 */
-        .card { background-color: #1e1e1e; border: 1px solid #333; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .card-header { background-color: #2c2c2c; border-bottom: 1px solid #444; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-        .pneu-box { border: 1px solid #444; border-radius: 5px; padding: 5px; text-align: center; margin: 2px; font-size: 0.8rem; }
-        .badge-temp { font-size: 0.9em; font-weight: bold; }
+        body { background-color: #f4f6f9; color: #333; font-family: 'Segoe UI', sans-serif; }
+        .navbar { background-color: #e10600; color: white; }
 
-        /* Cores de Status */
-        .status-ok { color: #00ff00; }
-        .status-warn { color: #ffcc00; }
-        .status-danger { color: #ff0000; animation: blink 1s infinite; }
+        /* Cards dos Carros */
+        .car-card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+            border: 1px solid #ddd;
+        }
+        .car-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.15); }
+
+        .card-header {
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #eee;
+            padding: 10px 15px;
+            font-weight: bold;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+
+        /* Pneus */
+        .pneu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 10px; }
+        .pneu-item {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 5px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+
+        /* Indicadores de Status (Bolinhas) */
+        .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+        .bg-ok { background-color: #28a745; }
+        .bg-warn { background-color: #ffc107; }
+        .bg-danger { background-color: #dc3545; animation: blink 1s infinite; }
 
         @keyframes blink { 50% { opacity: 0.5; } }
-        .stat-value { font-size: 1.2rem; font-weight: bold; }
+
+        .stat-label { font-size: 0.75rem; color: #6c757d; text-transform: uppercase; }
+        .stat-val { font-weight: bold; font-size: 1rem; }
     </style>
 </head>
 <body>
-
-    <nav class="navbar navbar-dark mb-4">
+    <nav class="navbar mb-4 shadow-sm">
         <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1">
-                <i class="fas fa-flag-checkered"></i> Sistema de Monitoramento de Pneus - GP Interlagos
-            </span>
-            <span class="text-white" id="last-update">Atualizando...</span>
+            <span class="navbar-brand mb-0 h1"><i class="fas fa-flag-checkered"></i> Monitoramento F1</span>
+            <small id="last-update">Conectando...</small>
         </div>
     </nav>
 
     <div class="container-fluid">
         <div class="row" id="grid-carros">
-            <div class="col-12 text-center mt-5">
-                <div class="spinner-border text-danger" role="status"></div>
-                <p>Aguardando dados da telemetria...</p>
+            <div class="col-12 text-center mt-5 text-muted">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="mt-2">Carregando telemetria...</p>
             </div>
         </div>
     </div>
 
     <script>
-        // Função para definir cor baseada na temperatura
-        function getStatusColor(temp, desgaste) {
-            if (desgaste > 90 || temp > 125) return 'status-danger'; // Crítico
-            if (desgaste > 70 || temp > 115) return 'status-warn';   // Alerta
-            return 'status-ok';                                      // OK
+        function getStatusClass(temp, desg) {
+            if (desg > 90 || temp > 125) return 'bg-danger';
+            if (desg > 70 || temp > 115) return 'bg-warn';
+            return 'bg-ok';
         }
 
-        function getPneuCard(nome, dados) {
-            const classeCor = getStatusColor(dados.temp, dados.desgaste);
+        function renderPneu(nome, p) {
+            const colorClass = getStatusClass(p.temp, p.desgaste);
             return `
-                <div class="col-6 mb-2">
-                    <div class="pneu-box">
-                        <small class="text-muted">${nome}</small><br>
-                        <i class="fas fa-circle ${classeCor}"></i>
-                        <div class="mt-1">
-                            Temp: <strong>${dados.temp}°C</strong><br>
-                            Desg: <strong>${dados.desgaste}%</strong>
-                        </div>
+                <div class="pneu-item">
+                    <div class="d-flex align-items-center justify-content-center mb-1">
+                        <span class="status-dot ${colorClass}"></span> <strong>${nome}</strong>
                     </div>
+                    <div>${p.temp.toFixed(1)}°C</div>
+                    <div class="text-muted">${p.desgaste.toFixed(1)}%</div>
                 </div>
             `;
         }
 
-        async function atualizarDashboard() {
+        async function update() {
             try {
-                const response = await fetch('/api/telemetria');
-                const data = await response.json();
+                const res = await fetch('/api/telemetria');
+                const data = await res.json();
 
-                // 1. Agrupar dados por Carro (pegar só o mais recente de cada um)
-                const carrosUltimoEstado = {};
-
-                // Como a API retorna uma lista cronológica, varremos e sobrescrevemos para ter o último
-                // A API traz do mais novo pro mais antigo, então se invertermos fica mais fácil ou só checamos se já existe
-                data.forEach(log => {
-                    if (!carrosUltimoEstado[log.carro_id]) {
-                        carrosUltimoEstado[log.carro_id] = log;
-                    }
+                // Agrupar por carro (último estado)
+                const carros = {};
+                data.forEach(d => {
+                    if (!carros[d.carro_id]) carros[d.carro_id] = d;
                 });
 
                 const grid = document.getElementById('grid-carros');
-                grid.innerHTML = ''; // Limpa a tela
 
-                const listaCarros = Object.values(carrosUltimoEstado);
-
-                if (listaCarros.length === 0) {
-                    grid.innerHTML = '<div class="col-12 text-center text-muted">Nenhum carro na pista.</div>';
+                if (Object.keys(carros).length === 0) {
+                    if(grid.innerHTML.includes('spinner')) grid.innerHTML = '<div class="col-12 text-center text-muted">Sem dados.</div>';
                     return;
                 }
 
-                // Ordenar por ID do carro para não ficarem pulando na tela
-                listaCarros.sort((a, b) => a.carro_id.localeCompare(b.carro_id));
-
-                // 2. Montar HTML para cada carro
-                listaCarros.forEach(carro => {
-                    const html = `
-                        <div class="col-md-4 col-lg-3">
-                            <div class="card">
+                let html = '';
+                Object.values(carros).sort((a,b) => a.carro_id.localeCompare(b.carro_id)).forEach(c => {
+                    html += `
+                        <div class="col-sm-6 col-md-4 col-xl-3 mb-4">
+                            <div class="car-card">
                                 <div class="card-header">
-                                    <span><i class="fas fa-car"></i> ${carro.carro_id}</span>
-                                    <span class="badge bg-secondary">Volta ${carro.volta}</span>
+                                    <span>${c.carro_id}</span>
+                                    <span class="badge bg-dark">V. ${c.volta}</span>
                                 </div>
-                                <div class="card-body">
-                                    <div class="row mb-2">
-                                        <div class="col-6">Velocidade:<br><span class="stat-value">${carro.velocidade}</span> <small>km/h</small></div>
-                                        <div class="col-6 text-end">Sensor:<br><small class="text-warning">${carro.sensor_responsavel || 'N/A'}</small></div>
+                                <div class="p-3">
+                                    <div class="d-flex justify-content-between mb-3 text-center">
+                                        <div>
+                                            <div class="stat-label">Velocidade</div>
+                                            <div class="stat-val text-primary">${c.velocidade} <small>km/h</small></div>
+                                        </div>
+                                        <div>
+                                            <div class="stat-label">Sensor</div>
+                                            <div class="stat-val text-secondary" style="font-size:0.8rem">${c.sensor_responsavel || '?'}</div>
+                                        </div>
                                     </div>
-                                    <hr class="border-secondary">
-                                    <div class="row">
-                                        ${getPneuCard('F. Esq', carro.pneus.fl)}
-                                        ${getPneuCard('F. Dir', carro.pneus.fr)}
-                                        ${getPneuCard('T. Esq', carro.pneus.rl)}
-                                        ${getPneuCard('T. Dir', carro.pneus.rr)}
+                                    <div class="pneu-grid">
+                                        ${renderPneu('FL', c.pneus.fl)} ${renderPneu('FR', c.pneus.fr)}
+                                        ${renderPneu('RL', c.pneus.rl)} ${renderPneu('RR', c.pneus.rr)}
                                     </div>
                                 </div>
                             </div>
                         </div>
                     `;
-                    grid.innerHTML += html;
                 });
-
-                document.getElementById('last-update').innerText = 'Última atualização: ' + new Date().toLocaleTimeString();
-
-            } catch (error) {
-                console.error("Erro ao buscar dados:", error);
-            }
+                grid.innerHTML = html;
+                document.getElementById('last-update').innerText = new Date().toLocaleTimeString();
+            } catch (e) { console.error(e); }
         }
-
-        // Atualiza a cada 2 segundos
-        setInterval(atualizarDashboard, 2000);
-        atualizarDashboard(); // Primeira chamada imediata
+        setInterval(update, 2000);
     </script>
 </body>
 </html>

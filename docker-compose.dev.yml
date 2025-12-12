@@ -2,70 +2,59 @@ version: '3.8'
 
 services:
   # ------------------------------------------------
-  # INFRAESTRUTURA (Broker MQTT e Banco de Dados)
+  # INFRA LEVE (1 Broker, 1 Mongo Simples)
   # ------------------------------------------------
-
   mosquitto:
     image: eclipse-mosquitto
-    container_name: mosquitto_broker
     ports:
       - "1883:1883"
+      - "9001:9001"
     volumes:
       - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
 
   mongodb:
     image: mongo:latest
-    container_name: mongodb_f1
     ports:
       - "27017:27017"
 
   # ------------------------------------------------
-  # APLICAÇÕES PYTHON
+  # APLICAÇÕES (1 de cada)
   # ------------------------------------------------
-
-  # SSACP: Servidor de Armazenamento (gRPC Server)
   ssacp:
     build: .
-    container_name: servidor_sacp
     command: python ssacp/main_server.py
     ports:
-      - "50051:50051" # Expõe gRPC
+      - "50051:50051"
     depends_on:
       - mongodb
     environment:
+      # Conecta no Mongo único
       - MONGO_URI=mongodb://mongodb:27017/
 
-  # SSVCP: Servidor de Visualização (API Flask)
-  ssvcp:
-    build: .
-    container_name: servidor_visualizacao
-    command: python ssvcp/app.py
-    ports:
-      - "5000:5000"   # Expõe para você acessar no navegador
-    depends_on:
-      - mongodb
-    environment:
-      - MONGO_URI=mongodb://mongodb:27017/
-
-  # ISCCP: Sensor Coletor (Subscriber MQTT + gRPC Client)
   isccp:
     build: .
-    container_name: sensor_isccp
     command: python isccp/main_isccp.py
     depends_on:
       - mosquitto
       - ssacp
     environment:
-      - BROKER_ADDRESS=mosquitto 
+      - BROKER_ADDRESS=mosquitto
       - GRPC_SERVER=ssacp:50051
 
-  # SCCP: O Carro (Publisher MQTT)
+  ssvcp:
+    build: .
+    command: python ssvcp/app.py
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongodb
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/
+
   carro:
     build: .
-    container_name: carro_redbull
     command: python car/main_car.py
     depends_on:
       - mosquitto
     environment:
       - BROKER_ADDRESS=mosquitto
-      - CAR_ID=RedBull_Max_01 # Nome fixo para facilitar o teste

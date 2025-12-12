@@ -34,9 +34,9 @@ class MonitoramentoStub(object):
         Args:
             channel: A grpc.Channel.
         """
-        self.EnviarDadosPneu = channel.unary_unary(
-                '/f1.Monitoramento/EnviarDadosPneu',
-                request_serializer=protos_dot_f1__pb2.DadosCarro.SerializeToString,
+        self.EnviarLotePneus = channel.unary_unary(
+                '/f1.Monitoramento/EnviarLotePneus',
+                request_serializer=protos_dot_f1__pb2.ListaDadosCarro.SerializeToString,
                 response_deserializer=protos_dot_f1__pb2.Resposta.FromString,
                 _registered_method=True)
 
@@ -44,8 +44,9 @@ class MonitoramentoStub(object):
 class MonitoramentoServicer(object):
     """Missing associated documentation comment in .proto file."""
 
-    def EnviarDadosPneu(self, request, context):
-        """Missing associated documentation comment in .proto file."""
+    def EnviarLotePneus(self, request, context):
+        """Mudamos aqui: agora aceita uma lista de dados
+        """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -53,9 +54,9 @@ class MonitoramentoServicer(object):
 
 def add_MonitoramentoServicer_to_server(servicer, server):
     rpc_method_handlers = {
-            'EnviarDadosPneu': grpc.unary_unary_rpc_method_handler(
-                    servicer.EnviarDadosPneu,
-                    request_deserializer=protos_dot_f1__pb2.DadosCarro.FromString,
+            'EnviarLotePneus': grpc.unary_unary_rpc_method_handler(
+                    servicer.EnviarLotePneus,
+                    request_deserializer=protos_dot_f1__pb2.ListaDadosCarro.FromString,
                     response_serializer=protos_dot_f1__pb2.Resposta.SerializeToString,
             ),
     }
@@ -70,7 +71,7 @@ class Monitoramento(object):
     """Missing associated documentation comment in .proto file."""
 
     @staticmethod
-    def EnviarDadosPneu(request,
+    def EnviarLotePneus(request,
             target,
             options=(),
             channel_credentials=None,
@@ -83,8 +84,8 @@ class Monitoramento(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/f1.Monitoramento/EnviarDadosPneu',
-            protos_dot_f1__pb2.DadosCarro.SerializeToString,
+            '/f1.Monitoramento/EnviarLotePneus',
+            protos_dot_f1__pb2.ListaDadosCarro.SerializeToString,
             protos_dot_f1__pb2.Resposta.FromString,
             options,
             channel_credentials,
