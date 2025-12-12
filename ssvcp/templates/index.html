@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>F1 Telemetria - GP Brasil</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #121212; color: #e0e0e0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .navbar { background-color: #1f1f1f; border-bottom: 3px solid #e10600; } /* Vermelho F1 */
+        .card { background-color: #1e1e1e; border: 1px solid #333; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .card-header { background-color: #2c2c2c; border-bottom: 1px solid #444; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .pneu-box { border: 1px solid #444; border-radius: 5px; padding: 5px; text-align: center; margin: 2px; font-size: 0.8rem; }
+        .badge-temp { font-size: 0.9em; font-weight: bold; }
+
+        /* Cores de Status */
+        .status-ok { color: #00ff00; }
+        .status-warn { color: #ffcc00; }
+        .status-danger { color: #ff0000; animation: blink 1s infinite; }
+
+        @keyframes blink { 50% { opacity: 0.5; } }
+        .stat-value { font-size: 1.2rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <nav class="navbar navbar-dark mb-4">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">
+                <i class="fas fa-flag-checkered"></i> Sistema de Monitoramento de Pneus - GP Interlagos
+            </span>
+            <span class="text-white" id="last-update">Atualizando...</span>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row" id="grid-carros">
+            <div class="col-12 text-center mt-5">
+                <div class="spinner-border text-danger" role="status"></div>
+                <p>Aguardando dados da telemetria...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Função para definir cor baseada na temperatura
+        function getStatusColor(temp, desgaste) {
+            if (desgaste > 90 || temp > 125) return 'status-danger'; // Crítico
+            if (desgaste > 70 || temp > 115) return 'status-warn';   // Alerta
+            return 'status-ok';                                      // OK
+        }
+
+        function getPneuCard(nome, dados) {
+            const classeCor = getStatusColor(dados.temp, dados.desgaste);
+            return `
+                <div class="col-6 mb-2">
+                    <div class="pneu-box">
+                        <small class="text-muted">${nome}</small><br>
+                        <i class="fas fa-circle ${classeCor}"></i>
+                        <div class="mt-1">
+                            Temp: <strong>${dados.temp}°C</strong><br>
+                            Desg: <strong>${dados.desgaste}%</strong>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function atualizarDashboard() {
+            try {
+                const response = await fetch('/api/telemetria');
+                const data = await response.json();
+
+                // 1. Agrupar dados por Carro (pegar só o mais recente de cada um)
+                const carrosUltimoEstado = {};
+
+                // Como a API retorna uma lista cronológica, varremos e sobrescrevemos para ter o último
+                // A API traz do mais novo pro mais antigo, então se invertermos fica mais fácil ou só checamos se já existe
+                data.forEach(log => {
+                    if (!carrosUltimoEstado[log.carro_id]) {
+                        carrosUltimoEstado[log.carro_id] = log;
+                    }
+                });
+
+                const grid = document.getElementById('grid-carros');
+                grid.innerHTML = ''; // Limpa a tela
+
+                const listaCarros = Object.values(carrosUltimoEstado);
+
+                if (listaCarros.length === 0) {
+                    grid.innerHTML = '<div class="col-12 text-center text-muted">Nenhum carro na pista.</div>';
+                    return;
+                }
+
+                // Ordenar por ID do carro para não ficarem pulando na tela
+                listaCarros.sort((a, b) => a.carro_id.localeCompare(b.carro_id));
+
+                // 2. Montar HTML para cada carro
+                listaCarros.forEach(carro => {
+                    const html = `
+                        <div class="col-md-4 col-lg-3">
+                            <div class="card">
+                                <div class="card-header">
+                                    <span><i class="fas fa-car"></i> ${carro.carro_id}</span>
+                                    <span class="badge bg-secondary">Volta ${carro.volta}</span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row mb-2">
+                                        <div class="col-6">Velocidade:<br><span class="stat-value">${carro.velocidade}</span> <small>km/h</small></div>
+                                        <div class="col-6 text-end">Sensor:<br><small class="text-warning">${carro.sensor_responsavel || 'N/A'}</small></div>
+                                    </div>
+                                    <hr class="border-secondary">
+                                    <div class="row">
+                                        ${getPneuCard('F. Esq', carro.pneus.fl)}
+                                        ${getPneuCard('F. Dir', carro.pneus.fr)}
+                                        ${getPneuCard('T. Esq', carro.pneus.rl)}
+                                        ${getPneuCard('T. Dir', carro.pneus.rr)}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    grid.innerHTML += html;
+                });
+
+                document.getElementById('last-update').innerText = 'Última atualização: ' + new Date().toLocaleTimeString();
+
+            } catch (error) {
+                console.error("Erro ao buscar dados:", error);
+            }
+        }
+
+        // Atualiza a cada 2 segundos
+        setInterval(atualizarDashboard, 2000);
+        atualizarDashboard(); // Primeira chamada imediata
+    </script>
+</body>
+</html>

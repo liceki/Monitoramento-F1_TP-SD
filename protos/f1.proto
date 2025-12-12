@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package f1;
+
+service Monitoramento {
+  rpc EnviarDadosPneu (DadosCarro) returns (Resposta) {}
+}
+
+message Pneu {
+  float temperatura = 1;
+  float desgaste = 2;
+  float pressao = 3;
+}
+
+message DadosCarro {
+  string carro_id = 1;
+  string sensor_id = 2; // Quem capturou esse dado
+  float velocidade = 3;
+  int32 volta = 4;
+  string timestamp = 5;
+
+  // Pneus aninhados
+  Pneu pneu_fl = 6;
+  Pneu pneu_fr = 7;
+  Pneu pneu_rl = 8;
+  Pneu pneu_rr = 9;
+}
+
+message Resposta {
+  string mensagem = 1;
+  bool sucesso = 2;
+}

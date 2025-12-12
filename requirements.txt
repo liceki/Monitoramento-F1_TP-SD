@@ -1,0 +1,5 @@
+paho-mqtt
+grpcio
+grpcio-tools
+pymongo
+flask
