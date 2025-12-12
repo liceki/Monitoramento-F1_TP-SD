@@ -60,12 +60,16 @@ services:
     deploy:
       replicas: 15
 
-  carro: # 24 CARROS
+  carro:
     build: .
     command: python car/main_car.py
-    depends_on: [mosquitto]
+    # REMOVEMOS O 'DEPENDS_ON' DO MONGO PARA NÃO TRAVAR O BOOT
+    depends_on:
+      - mosquitto
     environment:
       - BROKER_ADDRESS=mosquitto
+      # O Carro precisa saber onde é o banco para pegar o crachá
+      - MONGO_URI=mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
     deploy:
       replicas: 24
 

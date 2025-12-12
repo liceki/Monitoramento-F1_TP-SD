@@ -3,13 +3,16 @@ import json
 import random
 import os
 import paho.mqtt.client as mqtt
+import pymongo
+from pymongo.errors import DuplicateKeyError, ConnectionFailure
 
 # --- CONFIGURAÇÕES ---
 BROKER_ADDRESS = os.getenv("BROKER_ADDRESS", "localhost")
 BROKER_PORT = 1883
 TOPIC = "f1/pneus"
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 
-# Lista Oficial F1 2024 (Simplificada para caber nos cards)
+# Lista Oficial (Exatamente 24 Pilotos)
 PILOTOS = [
     "RedBull - Verstappen", "RedBull - Perez",
     "Ferrari - Leclerc", "Ferrari - Sainz",
@@ -21,24 +24,55 @@ PILOTOS = [
     "RB - Ricciardo", "RB - Tsunoda",
     "Sauber - Bottas", "Sauber - Zhou",
     "Haas - Magnussen", "Haas - Hulkenberg",
-    # Extras para completar 24 carros (Safety Cars ou Reservas)
     "Safety Car - Mercedes", "Safety Car - Aston",
-    "F2 - Bearman", "F2 - Antonelli"
+    "Reserva - Drugovich", "Reserva - Fittipaldi"
 ]
 
-# Tenta pegar um ID único baseado no hostname do Docker para não repetir nomes
-# O Docker nomeia como "projeto_carro_1", "projeto_carro_2"...
-try:
-    hostname = os.uname()[1]  # Pega o nome do container ex: f1-carro-12
-    # Extrai números do hostname
-    numero_container = int(''.join(filter(str.isdigit, hostname)))
-    # Usa o numero para pegar o index da lista (com modulo para não estourar)
-    nome_piloto = PILOTOS[(numero_container - 1) % len(PILOTOS)]
-except:
-    # Fallback: Se não conseguir ler o hostname, pega aleatório
-    nome_piloto = random.choice(PILOTOS)
 
-CAR_ID = nome_piloto
+def registrar_identidade():
+    """
+    Loop infinito até conseguir um nome único no Banco de Dados.
+    """
+    print("Tentando conectar ao Grid (MongoDB) para pegar identidade...")
+
+    # Randomiza tempo inicial para evitar 24 conexões simultâneas exatas
+    time.sleep(random.uniform(0, 5))
+
+    while True:
+        client = None
+        try:
+            # Tenta conectar (timeout curto para não travar muito)
+            client = pymongo.MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
+            db = client["f1_telemetria"]
+            col = db["grid_f1"]
+
+            # Embaralha a lista para tentar pegar qualquer vaga livre
+            tentativas = list(PILOTOS)
+            random.shuffle(tentativas)
+
+            for nome in tentativas:
+                try:
+                    # Tenta reservar o nome. Se já existe, dá erro e tenta o próximo.
+                    col.insert_one({"_id": nome, "timestamp": time.time()})
+                    print(f"--- IDENTIDADE CONFIRMADA: {nome} ---")
+                    client.close()
+                    return nome
+                except DuplicateKeyError:
+                    continue  # Nome ocupado
+
+            # Se chegou aqui, todos os nomes estão ocupados (ou erro de lógica)
+            print("Grid cheio? Tentando novamente em 5s...")
+            time.sleep(5)
+
+        except (ConnectionFailure, Exception) as e:
+            print(f"Aguardando Banco de Dados... ({e})")
+            time.sleep(3)
+        finally:
+            if client: client.close()
+
+
+# --- BLOQUEANTE: O CARRO SÓ LIGA SE TIVER NOME ---
+CAR_ID = registrar_identidade()
 
 # --- ESTADO INICIAL ---
 estado_pneus = {
@@ -99,15 +133,14 @@ def gerar_payload(velocidade):
     }
 
 
-# --- CONEXÃO ---
+# --- CONEXÃO MQTT ---
 def on_connect(client, userdata, flags, rc):
     if rc == 0:
-        print(f"[{CAR_ID}] Conectado!")
-    else:
-        print(f"Falha conexão: {rc}")
+        print(f"[{CAR_ID}] Conectado ao Broker MQTT!")
 
 
-client = mqtt.Client(client_id=f"Car_{random.randint(1000, 9999)}")  # ID MQTT único
+# Client ID aleatório para não dar conflito no Broker
+client = mqtt.Client(client_id=f"Car_Conn_{random.randint(1000, 999999)}")
 client.on_connect = on_connect
 
 while True:
@@ -124,8 +157,8 @@ try:
         vel = simular_fisica()
         payload = json.dumps(gerar_payload(vel))
         client.publish(TOPIC, payload)
-        # Randomiza um pouco o tempo de envio para evitar que todos mandem EXATAMENTE juntos
-        time.sleep(random.uniform(2.5, 3.5))
+        # Intervalo seguro para não afogar os sensores
+        time.sleep(random.uniform(4.0, 6.0))
 except KeyboardInterrupt:
     client.loop_stop()
     client.disconnect()
